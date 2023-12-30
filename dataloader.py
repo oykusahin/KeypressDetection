@@ -15,7 +15,7 @@ class Custom3DDataset(Dataset):
     def _load_samples(self):
         samples = []
         for label_file in sorted(os.listdir(self.labels_dir)):
-            frame_folder = label_file.split('.')[0]  # Assuming label file format is '1.txt'
+            frame_folder = label_file.split('.')[0] 
             frame_folder_path = os.path.join(self.frames_dir, frame_folder)
 
             label_file_path = os.path.join(self.labels_dir, label_file)
@@ -37,7 +37,7 @@ class Custom3DDataset(Dataset):
             frames = [self.transform(frame) for frame in frames]
 
         frames_stack = torch.stack(frames)
-        label = labels[0]  # Assuming each sequence has a single label
+        label = labels[0]  
         label_tensor = torch.tensor(label, dtype=torch.float)
         return frames_stack, label_tensor
 
