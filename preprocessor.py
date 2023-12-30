@@ -1,55 +1,145 @@
-from moviepy.editor import VideoFileClip
-import cv2
 import librosa
+import noisereduce as nr
+import soundfile as sf
 import numpy as np
+import matplotlib.pyplot as plt
 import os
 
-def extract_frames(video_path, output_folder):
-    cap = cv2.VideoCapture(video_path)
-    frame_rate = cap.get(cv2.CAP_PROP_FPS)
-    count = 0
+from scipy.io import wavfile
+from moviepy.editor import VideoFileClip
 
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
 
-        frame_path = f"{output_folder}/frame_{count}.jpg"
-        cv2.imwrite(frame_path, frame)
-        count += 1
 
-    cap.release()
-    return frame_rate
+def crop_video(input_video_path, output_video_path, end_time):
+    video = VideoFileClip(input_video_path)
+    cropped_video = video.subclip(0, end_time)
+    cropped_video.write_videofile(output_video_path, codec='libx264', audio_codec='aac')
 
-def detect_keypresses(audio_path, frame_rate):
+def extract_audio_from_video(video_path, audio_output_path):
+    video = VideoFileClip(video_path)
+    audio = video.audio
+    audio.write_audiofile(audio_output_path)
+
+
+def remove_noise_from_audio(input_audio_path, output_audio_path, noise_start=0, noise_end=10000):
+    y, sr = librosa.load(input_audio_path, sr=None)
+    reduced_noise = nr.reduce_noise(y=y, sr=sr)
+    sf.write(output_audio_path, reduced_noise, sr)
+
+
+def plot_frequency_graph(audio_path):
     y, sr = librosa.load(audio_path, sr=None)
-    onset_frames = librosa.onset.onset_detect(y=y, sr=sr, backtrack=True)
-    onset_times = librosa.frames_to_time(onset_frames, sr=sr)
+    spectral_centroids = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
+    frames = range(len(spectral_centroids))
+    t = librosa.frames_to_time(frames, sr=sr)
 
-    keypress_frames = np.round(onset_times * frame_rate).astype(int)
-    return keypress_frames
+    # Plot
+    plt.figure(figsize=(10, 4))
+    plt.plot(t, spectral_centroids, color='b')  # Plot spectral centroid
+    plt.title('Spectral Centroid over Time')
+    plt.xlabel('Time (s)')
+    plt.ylabel('Frequency (Hz)')
+    plt.show()
 
-def label_frames(video_path, frame_output_folder, audio_output_path):
-    if not os.path.exists(frame_output_folder):
-        os.makedirs(frame_output_folder)
+def extract_frames_and_audio_freq(video_path, output_folder, frame_rate=30):
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
 
-    video_clip = VideoFileClip(video_path)
+    video = VideoFileClip(video_path)
+    audio = video.audio
+    audio_path = os.path.join(output_folder, 'temp_audio.wav')
+    audio.write_audiofile(audio_path)
 
-    if not audio_output_path.endswith('.wav'):
-        audio_output_path += '.wav'
+    y, sr = librosa.load(audio_path, sr=None)
 
-    video_clip.audio.write_audiofile(audio_output_path, codec='pcm_s16le')
+    for frame_number in range(int(video.duration * frame_rate)):
+        frame = video.get_frame(frame_number / frame_rate)
+        frame_filename = f"{output_folder}/frame_{frame_number:05d}.png"
+        plt.imsave(frame_filename, frame)
 
-    frame_rate = extract_frames(video_path, frame_output_folder)
-    keypress_frames = detect_keypresses(audio_output_path, frame_rate)
+        start_sample = int(frame_number / frame_rate * sr)
+        end_sample = int((frame_number + 1) / frame_rate * sr)
+        y_frame = y[start_sample:end_sample]
 
-    frame_labels = {f'frame_{i}.jpg': 1 if i in keypress_frames else 0 for i in range(int(video_clip.duration * frame_rate))}
+        spectral_centroid = librosa.feature.spectral_centroid(y=y_frame, sr=sr)
+        mean_frequency = np.mean(spectral_centroid)
 
-    return frame_labels
+        with open(f"{output_folder}/frame_{frame_number:05d}_freq.txt", 'w') as f:
+            f.write(f"{mean_frequency}\n")
 
+    os.remove(audio_path)
 
-video_path = '/Users/oyku/Documents/Projects/KeypressDetection/data/data1.mp4'
-frame_output_folder = '/Users/oyku/Documents/Projects/KeypressDetection/output/frame'
-audio_output_path = '/Users/oyku/Documents/Projects/KeypressDetection/output/audio'
+def organize_folder(directory):    
+    countText = 0
+    countImage = 0
+    for filename in sorted(os.listdir(directory)):
+        if filename.endswith('.txt'):            
+            fileDirectory = os.path.join(directory, filename)
+            
+            if os.path.isfile(fileDirectory):
+                textfile = open(fileDirectory, "r")
+                audioFrequency = textfile.readline()
+                frameNumber = filename.split('_')[1]
+                textfilename = int(int(frameNumber) / 10)
+                if countText >= 10:
+                    countText = 0
+                
+                if countText == 0:
+                    countText = countText + 1
+                    f = open(str(textfilename) + ".txt", "w")
+                    f.write(audioFrequency)
+                    f.close()
 
-frame_labels = label_frames(video_path, frame_output_folder, audio_output_path)
+                elif countText < 10 and countText > 0:
+                    countText = countText + 1
+                    f = open(str(textfilename) + ".txt", "a+")
+                    f.write(audioFrequency)
+                    f.close()
+        
+        if filename.endswith('.png'):
+            fileDirectory = os.path.join(directory, filename)
+            if os.path.isfile(fileDirectory):
+                frameNumber = filename.split('_')[1].rstrip('.png')
+                imagefilename = str(int(int(frameNumber) / 10))
+
+            if countImage >= 10:
+                countImage = 0
+                
+            if countImage == 0:
+                countImage = countImage + 1
+                path = os.path.join(directory, imagefilename)
+                newPath = os.path.join(path, filename) 
+                os.mkdir(path)
+                os.rename(fileDirectory, newPath)
+
+            elif countImage < 10 and countImage > 0:
+                countImage = countImage + 1
+                path = os.path.join(directory, imagefilename)
+                newPath = os.path.join(path, filename) 
+                os.rename(fileDirectory, newPath)
+
+'''
+This is the main function of the preprocessor.py file.
+It prepares the given data for training by following these steps:
+1. Extract audio from video:
+2. Extract frames and audio freq
+3. Organizes the folder structure
+'''                   
+def main():
+    mainDir = '/Users/oyku/Documents/Projects/KeypressDetection/'
+    outputDir = os.path.join(mainDir, 'output')
+    videoDir = os.path.join(mainDir, 'rawdata/data1.mp4')
+    audioDir = os.path.join(mainDir, 'output/test_audio.wav')
+    
+    extract_frames_and_audio_freq(videoDir, outputDir)
+    organize_folder(outputDir)
+
+    '''
+    Tested the performance of noise reducted audio. Did not observed any improvement.
+    extract_audio_from_video(videoDir, outputDir)
+    remove_noise_from_audio(input_audio_path, output_audio_path)
+    plot_frequency_graph(audio_path)
+    '''
+
+if __name__=="__main__": 
+    main() 

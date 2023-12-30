@@ -37,20 +37,11 @@ class Custom3DDataset(Dataset):
             frames = [self.transform(frame) for frame in frames]
 
         frames_stack = torch.stack(frames)
-        labels_tensor = torch.tensor(labels, dtype=torch.float)
-        return frames_stack, labels_tensor
+        label = labels[0]  # Assuming each sequence has a single label
+        label_tensor = torch.tensor(label, dtype=torch.float)
+        return frames_stack, label_tensor
 
-# Define transformations
 transform = transforms.Compose([
     transforms.ToTensor(),
-    # Add any other transformations here.
+
 ])
-
-# Create the DataLoader
-frames_dir = '/Users/oyku/Documents/Projects/KeypressDetection/output/images'
-labels_dir = '/Users/oyku/Documents/Projects/KeypressDetection/output/labels'
-dataset = Custom3DDataset(frames_dir, labels_dir, transform=transform)
-sample_frames, sample_labels = dataset[0]
-print("Shape of frames:", sample_frames.shape)
-
-data_loader = DataLoader(dataset, batch_size=4, shuffle=True)

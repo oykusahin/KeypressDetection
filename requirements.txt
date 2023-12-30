@@ -1,0 +1,8 @@
+librosa
+noisereduce
+soundfile
+numpy
+matplotlib.pyplot
+os
+scipy.io
+moviepy.editor
